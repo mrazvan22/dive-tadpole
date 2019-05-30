@@ -55,9 +55,6 @@ parser.add_argument('--initClustering', dest = "initClustering", default = 'k-me
 parser.add_argument('--leaderboard', dest = "leaderboard", type=int,
                     help = 'set 1 for leaderboard prediction, otherwise 0')
 
-parser.add_argument('--d3', dest = "leaderboard", type=int, default=0,
-                    help = 'set 1 for D3 prediction, otherwise 0')
-
 parser.add_argument('--stdGammaAlpha', dest='stdGammaAlpha', type=float, default=0.0025,
                     help='std deviation of gamma prior on alpha')
 
@@ -83,7 +80,6 @@ from adniCommon import *
 from env import *
 import pandas as pd
 import PlotterVDPM
-import VDPMNan
 
 params, plotTrajParams = initCommonVoxParams(args)
 
@@ -114,8 +110,16 @@ def cleanTadpoleData(df):
   # df[petCols].replace({'-4': np.nan, -4: np.nan}, inplace=True)
   for c in petCols:
     df.loc[df[c] == '-4', c] = np.nan
+  return df
+
+def cleanTadpoleDataD3(df):
 
 
+  # print('df', df)
+  # print('np.isnan(df.ADAS13', np.sum(np.isnan(df.FLDSTRENG_UCSFFSX_11_02_15_UCSFFSX51_08_01_16)))
+  #
+
+  # it seems like there is nothing to do. all NaNs are noaded properly
 
   return df
 
@@ -150,14 +154,20 @@ def parseTadpoleData(df):
   # print(df.shape)
   d2Ind = df.RID[df.loc[:,'D2'] == 1].as_matrix()
 
-  print('d2Ind', np.unique(d2Ind), np.unique(d2Ind).shape)
 
+  # actually, don't remove any data because some D2 subjects only have 1 visit anyway
+  # mask = df.loc[:,'D1'] == 1
+  # df = df[mask]
+  # df.reset_index(drop=True, inplace=True)
+  # # print(df.shape)
+  # df.reset_index()
+  # df.reindex(index=range(df.shape[0]))
 
   df[cols] = df[cols].apply(pd.to_numeric, errors='coerce', axis=1)
-  pickle.dump(dict(df=df), open('tadpoleCleanDf.npz', 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-  df = pickle.load(open('tadpoleCleanDf.npz', 'rb'))['df']
+  pickle.dump(dict(df=df), open('tadpoleCleanDf_D12mD3.npz', 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+  df = pickle.load(open('tadpoleCleanDf_D12mD3.npz', 'rb'))['df']
 
-
+  # print(adsa)
   # normalise ventricles by ICV
   df['Ventricles'] = df['Ventricles'] / df['ICV']
 
@@ -175,14 +185,17 @@ def parseTadpoleData(df):
   examDates = df.EXAMDATE.as_matrix()
   df['EXAMDATE'] = pd.to_datetime(df['EXAMDATE'], format="%Y-%m-%d")
 
+  df.to_csv('tadpoleCleanDf_D12mD3.csv', index = False)
+  # print(ads)
   dataDf = df[cols]
-  dataDf.to_csv('tadpoleCleanDf.csv')
+
 
   # build numpy string array
   nrCols = len(cols)
   labels = np.ndarray((nrCols,), dtype='S100')
   for c in range(nrCols):
     labels[c] = cols[c]
+
 
   partCode = df.RID.as_matrix()
 
@@ -239,6 +252,7 @@ def parseTadpoleData(df):
   assert not np.isnan(scanTimepts).any()
   assert not np.isnan(partCode).any()
   assert not np.isnan(monthsSinceRefTime).any()
+  # assert not np.isnan(examDates).any()
 
   return data, diag, labels, scanTimepts, partCode, ageAtScan, dataDf, \
     monthsSinceRefTime, examDates, d2Ind
@@ -296,7 +310,7 @@ def visTadpoleHist(data, diag, age, labels, plotTrajParams, sortedByPvalInd):
   xs = np.linspace(np.min(age), np.max(age), 100)
   diagNrs = plotTrajParams['diagNrs']
 
-
+  import VDPMNaN
   VDPMNaN.makeLongArray(data, scanTimepts, partCode, np.unique(partCode))
 
   for row in range(nrRows):
@@ -367,7 +381,7 @@ def visTadpoleSpagetti(data, diag, age, scanTimepts, partCode, labels, plotTrajP
 
   xs = np.linspace(np.min(age), np.max(age), 100)
   diagNrs = plotTrajParams['diagNrs']
-  # import VDPMNan
+  import VDPMNan
   unqPartCode = np.unique(partCode)
   longData = VDPMNan.VDPMNan.makeLongArray(None, data, scanTimepts, partCode, unqPartCode)
   longDiag = VDPMNan.VDPMNan.makeLongArray(None, diag, scanTimepts, partCode, unqPartCode)
@@ -423,49 +437,41 @@ def visTadpoleSpagetti(data, diag, age, scanTimepts, partCode, labels, plotTrajP
 
 def launchTadpole(runIndex, nrProcesses, modelToRun):
 
+  d3File = 'TADPOLE_D3.csv'
+  d3Df = pd.read_csv(d3File, low_memory = False)
+  d3Df = cleanTadpoleDataD3(d3Df)
+
   genProcessedDataset = 1
 
   if genProcessedDataset:
     if args.leaderboard == 0:
-      inputFileData = 'TADPOLE_D1_D2.csv'
+
       sys.stdout.flush()
-      outFileCheckpoint2 = 'tadpoleDf2.npz'
+      outFileCheckpoint2 = 'tadpoleD3cp2.npz'
       print('loading data file')
-      df = pd.read_csv(inputFileData,low_memory=False)
-      df = cleanTadpoleData(df)
+
+      d1d2File = 'TADPOLE_D1_D2.csv'
+      d12Df = pd.read_csv(d1d2File,low_memory=False)
+      d12Df = cleanTadpoleData(d12Df)
+
+      # filter out the RIDs from D1D2 which are in D3
+      filtermask = np.logical_not(np.in1d(d12Df.RID, d3Df.RID))
+      print('filtermask', np.sum(filtermask), filtermask.shape)
+      print('old shape', d12Df.shape)
+      d12Df = d12Df[filtermask]
+      d12Df.reset_index(drop=True, inplace=True)
+      d12Df.reindex(index=range(d12Df.shape[0]))
+
+      # print('new shape', d12Df.shape)
+      # print(adsa)
+      # now train model on {D12 - D3}
       data, diag, labels, scanTimepts, partCode, ageAtScan, dataDf, monthsSinceRefTime, \
-        examDates, predInd = parseTadpoleData(df)
+        examDates, predInd = parseTadpoleData(d12Df)
 
     else:
-      outFileCheckpoint2 = 'tadpoleDf2Ldb.npz'
-      print('loading data file')
-      inputFileDataD1D2 = 'TADPOLE_D1_D2.csv'
-      df = pd.read_csv(inputFileDataD1D2,low_memory=False)
-      df = cleanTadpoleData(df)
-      inputFileDataLB = 'TADPOLE_LB1_LB2.csv'
-      dfLB = pd.read_csv(inputFileDataLB, low_memory=False)
+      #TODO
+      raise ValueError('leaderboard not implemented for D3 yet')
 
-      # this function runs exactly as in the normal submission, no difference here for leaderboard
-      data, diag, labels, scanTimepts, partCode, ageAtScan, dataDf, monthsSinceRefTime, \
-        examDates, _ = parseTadpoleData(df)
-
-      filterMaskLB12 = np.logical_or(dfLB.LB1 == 1, dfLB.LB2 == 1)
-      assert data.shape[0] == dfLB.shape[0]
-
-      # print(np.sum(filterMaskLB12), filterMaskLB12.shape[0])
-      # print(dads)
-
-      data = data[filterMaskLB12,:]
-      diag = diag[filterMaskLB12]
-      scanTimepts = scanTimepts[filterMaskLB12]
-      partCode = partCode[filterMaskLB12]
-      ageAtScan = ageAtScan[filterMaskLB12]
-      dataDf = dataDf[filterMaskLB12]
-      dataDf.reset_index(drop=True, inplace=True)
-      dataDf.reindex(index=range(dataDf.shape[0]))
-      monthsSinceRefTime = monthsSinceRefTime[filterMaskLB12]
-      examDates = examDates[filterMaskLB12]
-      predInd = dfLB.RID[dfLB.LB2 == 1].as_matrix()
 
     dataStruct = dict(data=data, diag=diag, labels=labels, scanTimepts=scanTimepts,
       partCode=partCode, ageAtScan=ageAtScan, dataDf=dataDf,
@@ -474,9 +480,9 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
 
   else:
     if args.leaderboard == 0:
-      outFileCheckpoint2 = 'tadpoleDf2.npz'
+      outFileCheckpoint2 = 'tadpoleD3cp2.npz'
     else:
-      outFileCheckpoint2 = 'tadpoleDf2Ldb.npz'
+      outFileCheckpoint2 = 'tadpoleD3cp2Ldb.npz'
 
 
   dataStruct = pickle.load(open(outFileCheckpoint2, 'rb'))
@@ -535,6 +541,7 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   scanTimepts = scanTimepts[filterMask]
   partCode = partCode[filterMask]
   ageAtScan = ageAtScan[filterMask]
+
   monthsSinceRefTime = monthsSinceRefTime[filterMask]
   examDates = examDates[filterMask]
   meanAgeAtScan = np.mean(ageAtScan.astype(float))
@@ -571,21 +578,11 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   params['modelToRun'] = modelToRun
   params['datasetFull'] = 'tadpole'
   params['labels'] = labels
-  params['predInd'] = predInd
   params['examDates'] = examDates
-
-  # print('ageAtScanCentered', ageAtScanCentered)
-  # print('ageAtScan', ageAtScan)
-  # print('scanTimepts', scanTimepts)
-  # ada
-
-  print('outFileCheckpoint2', outFileCheckpoint2)
-  print('d2Ind', np.unique(predInd), np.unique(predInd).shape)
-  # print(adsa)
 
   # filter down to 100 subjects to make it run faster, just for testing. Also select only some biomarkers
   unqPartCode = np.unique(params['partCode'])
-  nrPartToSample = 30
+  nrPartToSample = 100
   np.random.seed(3)
   selectedPartCode = np.random.choice(unqPartCode, nrPartToSample)
   dataIndices = np.in1d(params['partCode'], selectedPartCode)
@@ -593,7 +590,7 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
 
 
   indices = [i for i in range(len(labels)) if labels[i] in
-      [b'FDG', b'AV45', b'CDRSB', b'ADAS13', b'Ventricles',
+      [b'FDG', b'AV45', b'MMSE', b'CDRSB', b'ADAS13', b'Ventricles',
        b'Hippocampus', b'WholeBrain', b'Entorhinal', b'MidTemp', b'ABETA_UPENNBIOMK9_04_19_17',
        b'TAU_UPENNBIOMK9_04_19_17', b'PTAU_UPENNBIOMK9_04_19_17']]
 
@@ -627,14 +624,17 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   # print('AD %f +/- %f', np.nanmean(params['data'][params['diag'] == AD, 1]), np.nanstd(params['data'][params['diag'] == AD, 1]))
   # print(ads)
 
+  # map points that have been removed to the closest included points (nearestNeighbours).
+  # also find the adjacency list for the MRF and another subset of 10k points for
+  # initial clustering
+  runPartNN = 'L'
   plotTrajParams['nearestNeighbours'] = np.array(range(nrBiomk))
   params['adjList'] = np.nan
   params['nearNeighInitClust'] = np.array(range(nrBiomk))
   params['initClustSubsetInd'] = np.array(range(nrBiomk))
   params['meanBiomkRescale'] = meanCTL # for rescaling back if necessary
   params['stdBiomkRescale'] = stdBiomkRescale
-  # params['fixSpeed'] = True # if true then don't model progression speed, only time shift
-  params['fixSpeed'] = False  # if true then don't model progression speed, only time shift
+  params['fixSpeed'] = False # if true then don't model progression speed, only time shift
 
   diagNrs = np.unique(diag)
   # print('diagNrs, diag', diagNrs, diag)
@@ -655,7 +655,7 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
     suffix = 'Ldb'
     # print(ads)
 
-  expName = 'tadpoleInit%sCl%dPr%dRa%d%s' % (args.initClustering, params['nrClust'],
+  expName = 'tadpoleD3Init%sCl%dPr%dRa%d%s' % (args.initClustering, params['nrClust'],
     priorNr, args.rangeFactor, suffix)
   plotTrajParams['sortedByPvalInd'] = sortedByPvalInd
   plotTrajParams['pointIndices'] = pointIndices
@@ -666,7 +666,6 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
 
   params['plotTrajParams'] = plotTrajParams
 
-  # R - run that checkpoint, L - load result from checkpoint
   # [initClust, modelFit, AIC/BIC, blender, theta_sampling]
   params['runPartStd'] = ['R', 'R', 'I', 'I', 'I']
   params['runPartMain'] = ['R', 'I', 'I', 'I']  # [mainPart, plot, stage, globalMinStats]
@@ -683,7 +682,7 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   if params['masterProcess']:
     # [initClust, modelFit, AIC/BIC, blender, theta_sampling]
     params['runPartStd'] = ['L', 'L', 'I', 'I', 'I']
-    params['runPartMain'] = ['R', 'R', 'R', 'I']  # [mainPart, plot, stage, globalMinStats]
+    params['runPartMain'] = ['R', 'R', 'R']  # [mainPart, plot, stage]
     params['runPartCogCorr'] = ['I']
     params['runPartCogCorrMain'] = ['L', 'L', 'I', 'I', 'I']
     params['runPartDirDiag'] = ['R', 'R', 'I']
@@ -700,27 +699,84 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   print('Generating forecast ... ')
   teamName = 'DIVE6'
   if args.leaderboard:
-    outputFile = 'TADPOLE_Submission_Leaderboard_%s.csv' % teamName
+    outputFile = 'TADPOLE_Submission_Leaderboard_D3_%s.csv' % teamName
     predStartDate = datetime.date(2010, 5, 1)
     nrYearsToPred = 7
     nrMonthsToPred = 12*nrYearsToPred  # 5 years
   else:
-    outputFile = 'TADPOLE_Submission_%s.csv' % teamName
+    outputFile = 'TADPOLE_Submission_D3_%s.csv' % teamName
     predStartDate = datetime.date(2018, 1, 1)
     nrYearsToPred = 5
     nrMonthsToPred = 12*nrYearsToPred  # 7 years
 
   resCurrModel = res[0]['std']
+  dpmObj = res[0]['dpmObj']
 
-  predAdasAllSubj, predVentsAllSubj, predDiagAllSubj = makeTadpoleForecast(predStartDate,
-    nrYearsToPred, nrMonthsToPred, resCurrModel, params)
+
+  nrSubjD3 = d3Df.shape[0]
+  dataD3inD12format = np.nan * np.ones((nrSubjD3, data.shape[1]), float)
+  print('labels', labels)
+  print('cols', d3Df.columns)
+  d3Df['Ventricles'] = d3Df.Ventricles / d3Df.ICV
+
+# labels [b'FDG' b'AV45' b'CDRSB' b'ADAS13' b'MMSE' b'Ventricles' b'Hippocampus'
+#  b'WholeBrain' b'Entorhinal' b'MidTemp' b'ABETA_UPENNBIOMK9_04_19_17'
+#  b'TAU_UPENNBIOMK9_04_19_17' b'PTAU_UPENNBIOMK9_04_19_17']
+
+  # dataD3inD12format[:, 2] = d3Df.CDRSOB
+  dataD3inD12format[:, 3] = d3Df.ADAS13
+  dataD3inD12format[:, 4] = d3Df.MMSE
+  dataD3inD12format[:, 5] = d3Df.Ventricles
+  dataD3inD12format[:, 6] = d3Df.Hippocampus
+  dataD3inD12format[:, 7] = d3Df.WholeBrain
+  dataD3inD12format[:, 8] = d3Df.Entorhinal
+  dataD3inD12format[:, 9] = d3Df.MidTemp
+
+  # there is no data for FDG, AV45 and CSF biomarkers, so leave them all as NaNs.
+
+  # normalise D3 data to Z-scores
+  dataD3inD12format = (dataD3inD12format - params['meanBiomkRescale'][None, :]) / params['stdBiomkRescale'][None, :]
+
+  ageAtScanD3 = d3Df.AGE.as_matrix()
+  partCodeD3 = d3Df.RID.as_matrix()
+  print('partCodeD3', partCodeD3[:10])
+  print('ageAtScanD3', ageAtScanD3[:10])
+  for s in range(nrSubjD3):
+    if d3Df.VISCODE[s][0] == 'm':
+      ageAtScanD3[s] += float(d3Df.VISCODE[s][1:])/12
+
+  params['predInd'] = partCodeD3
+
+  d3Df['EXAMDATE'] = pd.to_datetime(d3Df['EXAMDATE'], format = "%Y-%m-%d")
+  examDatesD3 = d3Df['EXAMDATE']
+
+  mapping = {'NL': CTL, 'MCI': MCI, 'Dementia': AD, 'NL to MCI': MCI, 'MCI to Dementia':AD,
+  'MCI to NL': CTL, 'Dementia to MCI':MCI}
+  d3Df.replace({'DX': mapping}, inplace = True)
+  diagD3 = d3Df['DX']
+
+  # print(np.nanmean(dataD3inD12format[diagD3 == CTL,:],axis=0))
+  # print(np.nanmean(data[diag == CTL], axis = 0))
+  # print(adsa)
+
+  # convert to Masked array
+  dataD3inD12format = np.ma.masked_array(dataD3inD12format, np.isnan(dataD3inD12format))
+
+    # print('ageAtScanD3', ageAtScanD3[:10])
+  # print(adsa)
+  # dataD3inD12format
+
+  predAdasAllSubj, predVentsAllSubj, predDiagAllSubj = makeTadpoleForecastD3(predStartDate,
+    nrYearsToPred, nrMonthsToPred, resCurrModel, params, dataD3inD12format, ageAtScanD3, partCodeD3,
+    examDatesD3, dpmObj)
 
   # write forecast to file
   writeTadpoleSubmission(predAdasAllSubj, predVentsAllSubj, predDiagAllSubj, outputFile,
     nrMonthsToPred, predStartDate, params)
 
 
-def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrModel, params):
+def makeTadpoleForecastD3(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrModel, params,
+  dataD3inD12format, ageAtScanD3, partCodeD3, examDatesD3, dpmObj):
 
   yearsFromPredStartToEachPredDate = np.linspace(0, nrYearsToPred, num=nrMonthsToPred, endpoint=False)
 
@@ -732,10 +788,8 @@ def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrMod
   trajFunc = sigmoidFunc
 
   unqPartCodeFromRes = resCurrModel['uniquePartCode']
-  predInd = params['predInd']
-  predSetRidUnq = np.unique(predInd)
 
-  nrSubjPredSet = predSetRidUnq.shape[0]
+  nrSubjPredSet = partCodeD3.shape[0]
   # for each patient
   clustProbBC = resCurrModel['clustProb']
   thetas = resCurrModel['thetas']
@@ -756,16 +810,8 @@ def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrMod
   dpsMCI = dpsCross[crossDiag == MCI]
   dpsAD = dpsCross[crossDiag == AD]
 
-  partCode = params['partCode']
-  partCodeCurr = resCurrModel['crossPartCode']
-  # ageAtScan = resCurrModel['ageAtScan']
-
   data = params['data']
 
-
-  print(partCode.shape)
-  print(partCodeCurr.shape)
-  assert partCodeCurr.shape[0] == partCode.shape[0]
 
   kernelWidth = np.std(dpsCross)/6 # need to test this parameter by visualisation
 
@@ -783,18 +829,31 @@ def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrMod
   pl.plot(kdeXs, np.exp(kdeMCI.score_samples(kdeXs)), label='MCI', c=plotTrajParams['diagColors'][MCI])
   pl.plot(kdeXs, np.exp(kdeAD.score_samples(kdeXs)),  label='AD', c=plotTrajParams['diagColors'][AD])
   pl.legend()
+  pl.xlabel('disease progression score')
+  pl.ylabel('likelihood')
   fig.show()
-  fig.savefig('%s/diagHist.png' % (resCurrModel['outFolder']), dpi=100)
-
-  ageAtScan = params['ageAtScan']
-  examDates = params['examDates']
+  fig.savefig('%s/diagHistD3.png' % (resCurrModel['outFolder']), dpi=100)
 
   runPred = 'R'
   doPlot = 0
-  predFile = 'tadpolePredD2.npz'
+  predFile = 'tadpolePredD3.npz'
 
   meanBiomkRescale = params['meanBiomkRescale']
   stdBiomkRescale = params['stdBiomkRescale']
+
+  subShiftsD3, dpsCrossD3 = dpmObj.stageSubjectsCrossDataAge(dataD3inD12format, ageAtScanD3)
+  ds=dict(subShiftsD3=subShiftsD3, dpsCrossD3=dpsCrossD3)
+  pickle.dump(ds, open('d3Stages.npz', 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+
+  ds = pickle.load(open('d3Stages.npz', 'rb'))
+  subShiftsD3 = ds['subShiftsD3']
+  dpsCrossD3 = ds['dpsCrossD3']
+
+  print('dpmObj.subShifts', dpmObj.subShifts)
+  print('subShiftsD3', subShiftsD3)
+  print('dpsCrossD3', dpsCrossD3)
+  # print(adsas)
+
 
   if runPred == 'R':
     for s in range(nrSubjPredSet):
@@ -802,24 +861,23 @@ def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrMod
       ######### find dps at forecasted months ##########
 
       # find age at forecasted months
-      subjRowsCurr = partCode == predSetRidUnq[s]
+      subjRowsCurr = partCodeD3 == partCodeD3[s]
 
       # import pdb
       # pdb.set_trace()
 
       # for one timepoint, find the age and the examDate
-      print('part : ', predSetRidUnq[s], np.sum(subjRowsCurr))
-      print('part ageAtScan: ', predSetRidUnq[s], ageAtScan[subjRowsCurr][0])
+      print('part : ', partCodeD3[s], np.sum(subjRowsCurr))
+      print('part ageAtScanD3: ', partCodeD3[s], ageAtScanD3[subjRowsCurr][0])
 
       # compute age of subject at every prediction date
-      ageOneTimept = ageAtScan[subjRowsCurr][0]
-      examDateOneTimept = datetime.datetime.strptime(examDates[subjRowsCurr][0], '%Y-%m-%d').date()
+      ageOneTimept = ageAtScanD3[subjRowsCurr][0]
+      examDateOneTimept = examDatesD3[subjRowsCurr].iloc[0].date()
       yearsToPredStartDate = (predStartDate - examDateOneTimept).days/365
       ageAtPredDates = ageOneTimept + yearsToPredStartDate + yearsFromPredStartToEachPredDate
 
       # compute dps
-      subShiftsCurr = resCurrModel['subShifts'][unqPartCodeFromRes == predSetRidUnq[s]]
-      dpsAtFutForecastDatesCurr = calcDpsGivenAges(ageAtPredDates, subShiftsCurr)
+      dpsAtFutForecastDatesCurr = calcDpsGivenAges(ageAtPredDates, subShiftsD3[s,:])
 
       ######## find model predictions for those DPSs ##############3
 
@@ -828,11 +886,11 @@ def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrMod
 
       # add subject-specific intercept to the predictions, is subject has data
       # warning: can contain NaNs and even be NaN in all entries.
-      adasDataCurrSubj = data[subjRowsCurr, indexAdas]
-      ventsDataCurrSubj = data[subjRowsCurr, indexVents]
+      adasDataCurrSubj = dataD3inD12format[subjRowsCurr, indexAdas]
+      ventsDataCurrSubj = dataD3inD12format[subjRowsCurr, indexVents]
 
-      ageCurrVisits = ageAtScan[subjRowsCurr]
-      dpsSubjCurrVisits = calcDpsGivenAges(ageCurrVisits, subShiftsCurr)
+      ageCurrVisits = ageAtScanD3[subjRowsCurr]
+      dpsSubjCurrVisits = dpsCrossD3[subjRowsCurr]
       currVisitsPredAdas, currVisitsPredVents = calcModelPredAdasVents(dpsSubjCurrVisits, thetas,
         variances, clustProbBC[indexAdas, :].T, clustProbBC[indexVents, :].T, trajFunc)
 
@@ -854,12 +912,6 @@ def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrMod
       predVentsAllSubj[s, :, 1] = predVentsNotNorm[:,2]
       predVentsAllSubj[s, :, 2] = predVentsNotNorm[:,1]
 
-      # print('predAdasNotNorm', predAdasNotNorm[0,:])
-      # print(adsa)
-
-      adasDataCurrSubjUnnorm = adasDataCurrSubj * stdBiomkRescale[indexAdas] + meanBiomkRescale[indexAdas]
-      ventsDataCurrSubjUnnorm = ventsDataCurrSubj* stdBiomkRescale[indexVents] + meanBiomkRescale[indexVents]
-
       ctlLik = np.exp(kdeCTL.score_samples(dpsAtFutForecastDatesCurr.reshape(-1,1)))
       mciLik = np.exp(kdeMCI.score_samples(dpsAtFutForecastDatesCurr.reshape(-1,1)))
       adLik = np.exp(kdeAD.score_samples(dpsAtFutForecastDatesCurr.reshape(-1,1)))
@@ -870,17 +922,18 @@ def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrMod
       predDiagAllSubj[s, :, 1] = mciLik/sumLik
       predDiagAllSubj[s, :, 2] = adLik/sumLik
 
-
+      adasDataCurrSubjUnnorm = adasDataCurrSubj * stdBiomkRescale[indexAdas] + meanBiomkRescale[indexAdas]
+      ventsDataCurrSubjUnnorm = ventsDataCurrSubj* stdBiomkRescale[indexVents] + meanBiomkRescale[indexVents]
 
       if doPlot:
         if args.leaderboard:
-          lb4Data = pd.read_csv('TADPOLE_LB4.csv')
+          lb4Data = pd.read_csv('../data/ADNI/challenge_training_data/neil_repo/evaluation/TADPOLE_LB4.csv')
           lb4Data['CognitiveAssessmentDate'] = [datetime.datetime.strptime(x, '%Y-%m-%d') for x in lb4Data['CognitiveAssessmentDate']]
           lb4Data['ScanDate'] = [datetime.datetime.strptime(x, '%Y-%m-%d').date() for x in lb4Data['ScanDate']]
           mapping = {'CN': 0, 'MCI': 1, 'AD': 2}
           lb4Data.replace({'Diagnosis': mapping}, inplace=True)
 
-          currSubjMaskLB4 = lb4Data.RID == predSetRidUnq[s]
+          currSubjMaskLB4 = lb4Data.RID == partCodeD3[s]
           adasLB4CurrSubj = lb4Data.ADAS13[currSubjMaskLB4]
           ventsLB4CurrSubj = lb4Data.Ventricles[currSubjMaskLB4]
           diagLB4CurrSubj = lb4Data.Diagnosis[currSubjMaskLB4]
@@ -898,7 +951,7 @@ def makeTadpoleForecast(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrMod
 
         plotSubjForecasts(predAdasAllSubj[s, :, :], predVentsAllSubj[s, :, :], predDiagAllSubj[s, :, :]
         , ageAtPredDates, adasDataCurrSubjUnnorm, ventsDataCurrSubjUnnorm, ageCurrVisits, lb4Params,
-          rid=predSetRidUnq[s])
+          rid=partCodeD3[s])
 
     ds = dict(predAdasAllSubj=predAdasAllSubj, predVentsAllSubj=predVentsAllSubj,
       predDiagAllSubj=predDiagAllSubj)
@@ -982,11 +1035,15 @@ def calcDpsGivenAges(ageAtPredDates, subShiftsCurr):
 
 def addSubjIntercept(dpsT, futurePredictions, dataCurrSubjT, modelPredExistingVisits):
 
-  if np.isnan(dataCurrSubjT).all():
+  if np.isnan(dataCurrSubjT).all() or (dataCurrSubjT.count() == 0):
     # no data available cur current subject, leave as population estimate
     return futurePredictions
   else:
     # data is
+    # print('futurePredictions', futurePredictions)
+    # print('dataCurrSubjT', type(dataCurrSubjT), dataCurrSubjT.count(), dataCurrSubjT)
+    # print(np.nanmean(dataCurrSubjT))
+    # print(np.mean(modelPredExistingVisits))
     return futurePredictions + (np.nanmean(dataCurrSubjT) - np.mean(modelPredExistingVisits))
 
 def writeTadpoleSubmission(predAdasAllSubj, predVentsAllSubj, predDiagAllSubj, outputFile,
@@ -1057,6 +1114,8 @@ def runAllExpTADPOLE(params, expName, dpmBuilder):
 
   if unluckyOrNoParallel:
     dpmObj, res['std'] = evaluationFramework.runStdDPM(params, expName, dpmBuilder, params['runPartMain'])
+
+  res['dpmObj'] = dpmObj
 
   return res
 
