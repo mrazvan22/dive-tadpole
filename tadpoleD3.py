@@ -55,6 +55,14 @@ parser.add_argument('--initClustering', dest = "initClustering", default = 'k-me
 parser.add_argument('--leaderboard', dest = "leaderboard", type=int,
                     help = 'set 1 for leaderboard prediction, otherwise 0')
 
+<<<<<<< HEAD
+=======
+parser.add_argument('--stdGammaAlpha', dest='stdGammaAlpha', type=float, default=0.0025,
+                    help='std deviation of gamma prior on alpha')
+
+parser.add_argument('--stdBeta', dest='stdBeta', type=float, default=0.1,
+                    help='std deviation of gaussian prior on beta')
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
 
 args = parser.parse_args()
 
@@ -68,7 +76,11 @@ if args.agg:
   # print(asds)
 
 from voxCommon import *
+<<<<<<< HEAD
 import evaluationFramework, drcDEM, adniDEM
+=======
+import evaluationFramework
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
 from voxelDPM import *
 from aux import *
 from adniCommon import *
@@ -432,6 +444,7 @@ def visTadpoleSpagetti(data, diag, age, scanTimepts, partCode, labels, plotTrajP
 
 def launchTadpole(runIndex, nrProcesses, modelToRun):
 
+<<<<<<< HEAD
   d3File = '../data/ADNI/challenge_training_data/neil_repo/TADPOLE_D3.csv'
   d3Df = pd.read_csv(d3File, low_memory = False)
   d3Df = cleanTadpoleDataD3(d3Df)
@@ -439,13 +452,26 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   doProcess = 0
 
   if doProcess:
+=======
+  d3File = 'TADPOLE_D3.csv'
+  d3Df = pd.read_csv(d3File, low_memory = False)
+  d3Df = cleanTadpoleDataD3(d3Df)
+
+  genProcessedDataset = 1
+
+  if genProcessedDataset:
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
     if args.leaderboard == 0:
 
       sys.stdout.flush()
       outFileCheckpoint2 = 'tadpoleD3cp2.npz'
       print('loading data file')
 
+<<<<<<< HEAD
       d1d2File = '../data/ADNI/challenge_training_data/neil_repo/TADPOLE_D1_D2.csv'
+=======
+      d1d2File = 'TADPOLE_D1_D2.csv'
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
       d12Df = pd.read_csv(d1d2File,low_memory=False)
       d12Df = cleanTadpoleData(d12Df)
 
@@ -536,8 +562,16 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   scanTimepts = scanTimepts[filterMask]
   partCode = partCode[filterMask]
   ageAtScan = ageAtScan[filterMask]
+<<<<<<< HEAD
   monthsSinceRefTime = monthsSinceRefTime[filterMask]
   examDates = examDates[filterMask]
+=======
+
+  monthsSinceRefTime = monthsSinceRefTime[filterMask]
+  examDates = examDates[filterMask]
+  meanAgeAtScan = np.mean(ageAtScan.astype(float))
+  ageAtScanCentered = (ageAtScan - meanAgeAtScan).astype(np.float16)
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
 
   nrSubj, nrBiomk = data.shape
   # print('nrBiomk', nrBiomk)
@@ -565,6 +599,10 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   params['scanTimepts'] = scanTimepts
   params['partCode'] = partCode
   params['ageAtScan'] = ageAtScan
+<<<<<<< HEAD
+=======
+  params['initShift'] = ageAtScanCentered # initialise time shifts (betas) to (age - meanAge)
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
   params['biomkDir'] = DECR
   params['modelToRun'] = modelToRun
   params['datasetFull'] = 'tadpole'
@@ -625,7 +663,11 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   params['initClustSubsetInd'] = np.array(range(nrBiomk))
   params['meanBiomkRescale'] = meanCTL # for rescaling back if necessary
   params['stdBiomkRescale'] = stdBiomkRescale
+<<<<<<< HEAD
   params['fixSpeed'] = True # if true then don't model progression speed, only time shift
+=======
+  params['fixSpeed'] = False # if true then don't model progression speed, only time shift
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
 
   diagNrs = np.unique(diag)
   # print('diagNrs, diag', diagNrs, diag)
@@ -639,7 +681,11 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
 
   # sets an uninformative or informative prior
   priorNr = setPrior(params, args.informPrior, mean_gamma_alpha=1,
+<<<<<<< HEAD
     std_gamma_alpha=0.3, mu_beta=0, std_beta=5)
+=======
+    std_gamma_alpha=0.1, mu_beta=0, std_beta=5)
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
 
   suffix = ''
   if args.leaderboard:
@@ -658,8 +704,13 @@ def launchTadpole(runIndex, nrProcesses, modelToRun):
   params['plotTrajParams'] = plotTrajParams
 
   # [initClust, modelFit, AIC/BIC, blender, theta_sampling]
+<<<<<<< HEAD
   params['runPartStd'] = ['L', 'L', 'I', 'I', 'I']
   params['runPartMain'] = ['R', 'I', 'I']  # [mainPart, plot, stage]
+=======
+  params['runPartStd'] = ['R', 'R', 'I', 'I', 'I']
+  params['runPartMain'] = ['R', 'I', 'I', 'I']  # [mainPart, plot, stage, globalMinStats]
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
   params['runPartCogCorr'] = ['I']
   params['runPartCogCorrMain'] = ['L', 'L', 'I', 'I', 'L']
   params['runPartDirDiag'] = ['R', 'R', 'I']
@@ -835,7 +886,10 @@ def makeTadpoleForecastD3(predStartDate, nrYearsToPred, nrMonthsToPred, resCurrM
   subShiftsD3, dpsCrossD3 = dpmObj.stageSubjectsCrossDataAge(dataD3inD12format, ageAtScanD3)
   ds=dict(subShiftsD3=subShiftsD3, dpsCrossD3=dpsCrossD3)
   pickle.dump(ds, open('d3Stages.npz', 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+<<<<<<< HEAD
   print(adsa)
+=======
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
 
   ds = pickle.load(open('d3Stages.npz', 'rb'))
   subShiftsD3 = ds['subShiftsD3']
@@ -1027,11 +1081,22 @@ def calcDpsGivenAges(ageAtPredDates, subShiftsCurr):
 
 def addSubjIntercept(dpsT, futurePredictions, dataCurrSubjT, modelPredExistingVisits):
 
+<<<<<<< HEAD
   if np.isnan(dataCurrSubjT).all():
+=======
+  if np.isnan(dataCurrSubjT).all() or (dataCurrSubjT.count() == 0):
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
     # no data available cur current subject, leave as population estimate
     return futurePredictions
   else:
     # data is
+<<<<<<< HEAD
+=======
+    # print('futurePredictions', futurePredictions)
+    # print('dataCurrSubjT', type(dataCurrSubjT), dataCurrSubjT.count(), dataCurrSubjT)
+    # print(np.nanmean(dataCurrSubjT))
+    # print(np.mean(modelPredExistingVisits))
+>>>>>>> a68c3519cc7626e8b66ebace63280668ff32a358
     return futurePredictions + (np.nanmean(dataCurrSubjT) - np.mean(modelPredExistingVisits))
 
 def writeTadpoleSubmission(predAdasAllSubj, predVentsAllSubj, predDiagAllSubj, outputFile,
